@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b0e14;
+  --surface: #121722;
+  --surface-2: #1a2130;
+  --border-soft: #242d40;
+  --foreground: #e7eaf3;
+  --muted: #98a0b3;
+  --accent: #a78bfa;
+  --accent-strong: #8b5cf6;
+  --aqua: #22d3ee;
+  --flame: #fb923c;
+  --success: #34d399;
+  --danger: #f87171;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border-soft: var(--border-soft);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-aqua: var(--aqua);
+  --color-flame: var(--flame);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+}
+
+/* Мягкое свечение для hero-секций */
+.hero-glow {
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(139, 92, 246, 0.14), transparent 45%),
+    radial-gradient(circle at 80% 25%, rgba(34, 211, 238, 0.1), transparent 45%);
+}
+
+/* Тонкий скроллбар для редактора кода */
+.cm-editor .cm-scroller {
+  font-family: var(--font-mono), ui-monospace, monospace !important;
+}

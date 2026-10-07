@@ -1,0 +1,37 @@
+# JavaQuest — локальная инфраструктура.
+# Требует установленный Docker Desktop (см. README).
+#
+#   docker compose up -d
+#   docker compose exec piston piston install java   # один раз, ~200 МБ
+#
+# После этого Piston доступен на http://localhost:2000 (PISTON_API_URL в .env).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: javaquest
+      POSTGRES_PASSWORD: javaquest
+      POSTGRES_DB: javaquest
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U javaquest"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  piston:
+    image: ghcr.io/engineer-man/piston:latest
+    restart: unless-stopped
+    privileged: true # Piston изолирует процессы через cgroups/nsjail
+    ports:
+      - "2000:2000"
+    volumes:
+      - ./data/piston/packages:/piston/packages
+
+volumes:
+  pgdata:

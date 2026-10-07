@@ -1,0 +1,100 @@
+// JavaQuest — схема базы данных.
+// v1 локальной разработки: SQLite (не требует Docker).
+// Для PostgreSQL: замените provider на "postgresql" и url на env("DATABASE_URL")
+// (см. README, раздел «PostgreSQL и Docker»).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  avatarSeed   String   @default("fox")
+  role         String   @default("USER") // USER | ADMIN
+  createdAt    DateTime @default(now())
+
+  progress     UserProgress[]
+  submissions  Submission[]
+  streak       Streak?
+  xpEvents     XpEvent[]
+  achievements UserAchievement[]
+  dailyGoals   DailyGoal[]
+}
+
+// Данные пользователя привязываются к контенту по стабильным строковым id
+// из src/content (контент живёт в коде и версионируется вместе с сайтом).
+
+model Streak {
+  userId           String @id
+  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentStreak    Int    @default(0)
+  longestStreak    Int    @default(0)
+  lastActiveDate   String // YYYY-MM-DD (UTC)
+  freezesAvailable Int    @default(1)
+}
+
+model UserProgress {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseId  String
+  completedAt DateTime @default(now())
+  xpEarned    Int
+  attempts    Int      @default(1)
+
+  @@unique([userId, exerciseId])
+  @@index([userId])
+}
+
+model Submission {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseId  String
+  code        String
+  status      String // PASSED | FAILED | ERROR
+  testResults String // JSON: [{ stdin, expected, actual, pass, stderr }]
+  runtimeMs   Int?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model XpEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int
+  reason    String // "exercise:<id>" | "lesson:<id>" | "achievement:<code>"
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model UserAchievement {
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementCode String
+  unlockedAt      DateTime @default(now())
+
+  @@id([userId, achievementCode])
+}
+
+model DailyGoal {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date     String // YYYY-MM-DD (UTC)
+  targetXp Int
+  earnedXp Int    @default(0)
+
+  @@unique([userId, date])
+}
