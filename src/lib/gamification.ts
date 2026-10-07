@@ -230,7 +230,7 @@ export async function recordCompletion(
     });
 
     const finalize = async (granted: number, streak: StreakState): Promise<RecordResult> => {
-      const totalAgg = await tx.xpEvent.aggregate({ _sum: { amount: true } });
+      const totalAgg = await tx.xpEvent.aggregate({ _sum: { amount: true }, where: { userId } });
       const totalXp = totalAgg._sum.amount ?? 0;
 
       const owned = await tx.userAchievement.findMany({ where: { userId } });

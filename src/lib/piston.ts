@@ -1,38 +1,23 @@
-// Клиент серверной песочницы Piston: компилирует и запускает Java-код,
-// прогоняет тест-кейсы (stdin → сравнение stdout).
+// Диспетчер песочницы: прогоняет Java-код по тест-кейсам (stdin → сравнение stdout).
+// Бэкенды:
+//   local  — настоящий JDK с машины (javac/java), без Docker (личный сайт/разработка)
+//   piston — серверная песочница Piston в Docker (для публичного продакшена)
+// Выбор: RUNNER_BACKEND=auto (по умолчанию) | local | piston.
 
 import type { TestCase } from "@/content/types";
+import {
+  localJdkAvailable,
+  normalizeOutput,
+  runLocalJava,
+  type ExecuteResult,
+  type TestResult,
+} from "@/lib/local-java";
+
+export type { ExecuteResult, TestResult };
+export { normalizeOutput };
 
 const API_URL = process.env.PISTON_API_URL ?? "http://localhost:2000";
 const RUN_TIMEOUT_MS = Number(process.env.RUN_TIMEOUT_MS ?? 5000);
-
-export interface TestResult {
-  stdin: string;
-  expected: string;
-  actual: string;
-  pass: boolean;
-  stderr: string;
-}
-
-export interface ExecuteResult {
-  ok: boolean;
-  kind: "passed" | "failed" | "compile_error" | "runner_unavailable";
-  compileError?: string;
-  tests?: TestResult[];
-  runtimeMs?: number;
-  message?: string;
-}
-
-/** Убираем \r, хвостовые пробелы в строках и пустые строки в конце. */
-export function normalizeOutput(raw: string): string {
-  return raw
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.replace(/[ \t]+$/, ""))
-    .join("\n")
-    .replace(/\n+$/, "")
-    .trim();
-}
 
 interface PistonResponse {
   compile?: { code: number | null; stdout: string; stderr: string; output: string };
@@ -40,11 +25,11 @@ interface PistonResponse {
   message?: string;
 }
 
-async function callPiston(code: string, stdin: string): Promise<PistonResponse> {
+async function callPiston(url: string, code: string, stdin: string): Promise<PistonResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30_000); // compile + run с запасом
   try {
-    const res = await fetch(`${API_URL}/api/v2/execute`, {
+    const res = await fetch(`${url}/api/v2/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -67,8 +52,8 @@ async function callPiston(code: string, stdin: string): Promise<PistonResponse> 
   }
 }
 
-/** Прогоняет код по всем тест-кейсам, по одному запросу на кейс. */
-export async function executeTests(code: string, testCases: TestCase[]): Promise<ExecuteResult> {
+/** Piston-бэкенд: по одному запросу на тест-кейс. */
+async function executeWithPiston(code: string, testCases: TestCase[]): Promise<ExecuteResult> {
   const tests: TestResult[] = [];
   let runtimeMs = 0;
 
@@ -77,7 +62,7 @@ export async function executeTests(code: string, testCases: TestCase[]): Promise
     let response: PistonResponse;
     try {
       const startedAt = Date.now();
-      response = await callPiston(code, stdin);
+      response = await callPiston(API_URL, code, stdin);
       runtimeMs += Date.now() - startedAt;
     } catch (err) {
       console.error("[piston] unavailable:", err);
@@ -85,7 +70,7 @@ export async function executeTests(code: string, testCases: TestCase[]): Promise
         ok: false,
         kind: "runner_unavailable",
         message:
-          "Песочница для запуска кода недоступна. Запустите Docker и выполните: docker compose up -d (подробнее — в README).",
+          "Песочница недоступна: нет ни локального JDK (javac), ни Piston в Docker. Установи Eclipse Temurin 21 или запусти `docker compose up -d` (подробнее — в README).",
       };
     }
 
@@ -110,6 +95,33 @@ export async function executeTests(code: string, testCases: TestCase[]): Promise
 
   const ok = tests.every((t) => t.pass);
   return { ok, kind: ok ? "passed" : "failed", tests, runtimeMs };
+}
+
+/** Прогоняет код по всем тест-кейсам, выбирая доступный бэкенд. */
+export async function executeTests(code: string, testCases: TestCase[]): Promise<ExecuteResult> {
+  const backend = (process.env.RUNNER_BACKEND ?? "auto").toLowerCase();
+
+  if (backend === "local") {
+    const r = await runLocalJava(code, testCases, RUN_TIMEOUT_MS);
+    if (r.kind === "compile_error" && r.compileError) r.compileError = friendlyCompileError(r.compileError);
+    return r;
+  }
+  if (backend === "piston") {
+    return executeWithPiston(code, testCases);
+  }
+
+  // auto: предпочитаем локальный JDK, иначе Piston
+  if (localJdkAvailable()) {
+    const local = await runLocalJava(code, testCases, RUN_TIMEOUT_MS);
+    if (local.kind !== "runner_unavailable") {
+      if (local.kind === "compile_error" && local.compileError) {
+        local.compileError = friendlyCompileError(local.compileError);
+      }
+      return local;
+    }
+    console.warn("[runner] local JDK failed, falling back to piston:", local.message);
+  }
+  return executeWithPiston(code, testCases);
 }
 
 const COMPILE_HINTS: Array<[RegExp, string]> = [

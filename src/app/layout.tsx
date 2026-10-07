@@ -21,11 +21,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
+    // suppressHydrationWarning: антивирусные расширения (Bitdefender и т.п.)
+    // добавляют в DOM свои атрибуты (bis_skin_checked, __processed_*) до гидратации —
+    // это шум не из нашего кода, отключаем предупреждения на корневых элементах.
     <html
       lang="ru"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body suppressHydrationWarning className="min-h-full flex flex-col">
         <Navbar />
         <main className="flex-1">{children}</main>
       </body>
