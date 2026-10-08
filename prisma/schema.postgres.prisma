@@ -1,0 +1,99 @@
+// Postgres-схема для продакшена (Railway и т.п.).
+// Дублирует prisma/schema.prisma, но с provider = "postgresql".
+// Локальная разработка использует SQLite (prisma/schema.prisma) — при
+// изменении моделей обновляй ОБА файла.
+//
+// Синхронизация: npm run db:push:pg
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  avatarSeed   String   @default("fox")
+  role         String   @default("USER") // USER | ADMIN
+  createdAt    DateTime @default(now())
+
+  progress     UserProgress[]
+  submissions  Submission[]
+  streak       Streak?
+  xpEvents     XpEvent[]
+  achievements UserAchievement[]
+  dailyGoals   DailyGoal[]
+}
+
+model Streak {
+  userId           String @id
+  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentStreak    Int    @default(0)
+  longestStreak    Int    @default(0)
+  lastActiveDate   String // YYYY-MM-DD (UTC)
+  freezesAvailable Int    @default(1)
+}
+
+model UserProgress {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseId  String
+  completedAt DateTime @default(now())
+  xpEarned    Int
+  attempts    Int      @default(1)
+
+  @@unique([userId, exerciseId])
+  @@index([userId])
+}
+
+model Submission {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseId  String
+  code        String
+  status      String // PASSED | FAILED | ERROR
+  testResults String // JSON: [{ stdin, expected, actual, pass, stderr }]
+  runtimeMs   Int?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model XpEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int
+  reason    String // "exercise:<id>" | "lesson:<id>" | "achievement:<code>"
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model UserAchievement {
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementCode String
+  unlockedAt      DateTime @default(now())
+
+  @@id([userId, achievementCode])
+}
+
+model DailyGoal {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date     String // YYYY-MM-DD (UTC)
+  targetXp Int
+  earnedXp Int    @default(0)
+
+  @@unique([userId, date])
+}

@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:push": "prisma db push",
+    "db:push:pg": "prisma db push --schema prisma/schema.postgres.prisma"
   },
   "dependencies": {
     "@codemirror/lang-java": "^6.0.2",

@@ -111,6 +111,28 @@ tests/                      # unit-тесты игровой логики и п�
 сравнение идёт после нормализации (без `\r` и хвостовых пробелов).
 Новые модули помечай `published: false`, пока не готово содержимое.
 
+## Деплой на Railway
+
+Код готов к Railway: `railway.json` описывает сборку и запуск, схема Postgres лежит в `prisma/schema.postgres.prisma`.
+
+1. Залей репозиторий на GitHub (приватный — Railway умеет работать с приватными).
+2. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → выбери репозиторий. Railway определит Next.js и применит `railway.json` (build: `prisma generate && next build`).
+3. Добавь базу: в том же проекте **New** → **Database** → **PostgreSQL**.
+4. В сервисе приложения открой **Variables** и добавь:
+
+   | Переменная | Значение |
+   |---|---|
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (ссылка на сервис базы) |
+   | `AUTH_SECRET` | сгенерируй: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+   | `AUTH_TRUST_HOST` | `true` (обязательно для NextAuth вне localhost) |
+   | `RUNNER_BACKEND` | `piston` |
+   | `PISTON_API_URL` | URL твоего Piston-сервиса (шаг 5) |
+
+5. Java-песочница: на Railway в контейнере нет `javac`, поэтому подключи [Piston](https://github.com/engineer-man/piston) — через шаблон сообщества Railway («Piston») или VPS с Docker — и укажи его URL в `PISTON_API_URL`. Пока песочницы нет, сайт работает: викторины полностью доступны, кодовые задания показывают дружелюбную заглушку.
+6. Deploy: Railway сам прогонит `prisma db push` против Postgres при старте (прописано в `startCommand` из `railway.json`) и поднимет сайт на выданном домене.
+
+> Локальная разработка остаётся на SQLite — Postgres-схема нужна только продакшену. Модели дублируются в `schema.prisma` и `schema.postgres.prisma`: меняя модели, обновляй оба файла.
+
 ## Известные ограничения (v1)
 
 - Вход — только email+пароль; Google OAuth не подключён.
@@ -123,5 +145,5 @@ tests/                      # unit-тесты игровой логики и п�
 ## Дорожная карта
 
 Google OAuth · заморозки за достижения в UI · редактирование цели дня ·
-модули 4–13 (условия, циклы, массивы, ООП, коллекции, проекты) ·
+последовательная блокировка уроков · fill-in-the-gap задания ·
 сердечки/жизни · спринты и лиги.
