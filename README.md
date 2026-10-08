@@ -111,31 +111,61 @@ tests/                      # unit-тесты игровой логики и п�
 сравнение идёт после нормализации (без `\r` и хвостовых пробелов).
 Новые модули помечай `published: false`, пока не готово содержимое.
 
-## Деплой на Railway
+## Деплой на Vercel
 
-Код готов к Railway: `railway.json` описывает сборку и запуск, схема Postgres лежит в `prisma/schema.postgres.prisma`.
+Vercel — основная целевая платформа. Схема БД выбирается автоматически по виду `DATABASE_URL`
+(см. `scripts/with-schema.mjs`), поэтому сборка работает и с Postgres, и с локальной SQLite.
 
-1. Залей репозиторий на GitHub (приватный — Railway умеет работать с приватными).
-2. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → выбери репозиторий. Railway определит Next.js и применит `railway.json` (build: `prisma generate && next build`).
-3. Добавь базу: в том же проекте **New** → **Database** → **PostgreSQL**.
-4. В сервисе приложения открой **Variables** и добавь:
+1. Залей репозиторий на GitHub (можно приватный).
+2. [vercel.com](https://vercel.com) → **Add New** → **Project** → импортируй репозиторий.
+   Vercel подхватит `vercel.json` (build: `node scripts/with-schema.mjs generate && next build`).
+3. Создай базу: [neon.com](https://neon.com), [supabase.com](https://supabase.com) или Vercel Postgres.
+   Скопируй строку подключения (начинается с `postgresql://`) — она понадобится в шаге 4.
+4. Vercel → **Settings** → **Environment Variables** — добавь:
 
-   | Переменная | Значение |
-   |---|---|
-   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (ссылка на сервис базы) |
-   | `AUTH_SECRET` | сгенерируй: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-   | `AUTH_TRUST_HOST` | `true` (обязательно для NextAuth вне localhost) |
-   | `RUNNER_BACKEND` | `piston` |
-   | `PISTON_API_URL` | URL твоего Piston-сервиса (шаг 5) |
+   | Переменная | Значение | Обязательна |
+   |---|---|---|
+   | `DATABASE_URL` | строка подключения Postgres (Neon/Supabase) | **да** |
+   | `AUTH_SECRET` | сгенерируй: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` | **да** |
+   | `AUTH_TRUST_HOST` | `true` | **да** |
+   | `RUNNER_BACKEND` | `piston` | нет |
+   | `PISTON_API_URL` | URL Piston-сервиса (шаг 6) | нет |
 
-5. Java-песочница: на Railway в контейнере нет `javac`, поэтому подключи [Piston](https://github.com/engineer-man/piston) — через шаблон сообщества Railway («Piston») или VPS с Docker — и укажи его URL в `PISTON_API_URL`. Пока песочницы нет, сайт работает: викторины полностью доступны, кодовые задания показывают дружелюбную заглушку.
-6. Deploy: Railway прогонит `prisma db push` против Postgres при старте (прописано в `startCommand` из `railway.json`) и поднимет сайт на выданном домене.
+5. **Redeploy** (Deployments → ⋯ → Redeploy), иначе новые переменные не применятся.
+6. Java-песочница: на Vercel нет `javac`, поэтому подключи [Piston](https://github.com/engineer-man/piston)
+   (Docker на VPS или Railway) и укажи URL в `PISTON_API_URL`. Без песочницы сайт работает:
+   викторины доступны полностью, кодовые задания показывают дружелюбную заглушку.
 
-**Проверка после деплоя:** открой `https://твой-домен/api/health` — увидишь `{"healthy":true,...}` и число пользователей. Если `healthy:false`, там же будет причина (например, `database: "error"` с текстом ошибки).
+**Проверка после деплоя:** открой `https://твой-домен/api/health`.
 
-> ⚠️ **Важно про схему.** Продакшен собирается с Postgres-схемой (`buildCommand` в `railway.json` явно указывает `--schema prisma/schema.postgres.prisma`). Не меняй его на обычный `npm run build`: тот генерирует Prisma-клиент под **SQLite**, и на Railway все запросы к базе начнут падать — регистрация и вход перестанут работать. Локально SQLite-схема остаётся рабочей (`npm run build`, `npm run dev`).
+```json
+{"healthy":true,"problems":[],"checks":{...}}
+```
 
-> Локальная разработка остаётся на SQLite. Модели дублируются в `schema.prisma` и `schema.postgres.prisma`: меняя модели, обновляй оба файла.
+Если `healthy:false` — в поле `problems` будет список конкретных причин
+(нет `AUTH_SECRET`, база недоступна, схема не создана и т.д.).
+
+### Если видишь «Server error. There is a problem with the server configuration»
+
+Это Auth.js v5 сообщает, что ему не хватает конфигурации. В 99% случаев — одно из двух:
+
+| Причина | Решение |
+|---|---|
+| Не задан `AUTH_SECRET` | Добавь переменную (см. шаг 4) и сделай **Redeploy** |
+| Не задан `AUTH_TRUST_HOST` | Добавь `AUTH_TRUST_HOST=true` и **Redeploy** |
+
+Важно: Vercel не применяет новые переменные окружения к уже собранному деплою — после
+добавления переменных **обязательно** сделай Redeploy, иначе ошибка останется.
+
+Таблицы в базе создаются автоматически при первом обращении (см. `ensureSchema()` в `src/lib/db.ts`),
+отдельно запускать миграции не нужно.
+
+> Модели дублируются в `schema.prisma` (SQLite, локально) и `schema.postgres.prisma` (Postgres, хостинг):
+> меняя модели, обновляй оба файла. Выбор схемы при сборке — автоматический.
+
+## Деплой на Railway (альтернатива)
+
+Код совместим и с Railway: `railway.json` описывает сборку и запуск. Кратко: добавь `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`, `AUTH_SECRET`, `AUTH_TRUST_HOST=true`, затем добавь сервис PostgreSQL в том же проекте.
 
 ## Известные ограничения (v1)
 

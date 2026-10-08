@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { db } from "@/lib/db";
+import { db, ensureSchema } from "@/lib/db";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Имя обязательно").max(50),
@@ -22,6 +22,8 @@ export async function POST(req: Request) {
   const email = parsed.data.email.toLowerCase().trim();
 
   try {
+    await ensureSchema(); // на Vercel таблицы создаются при первом обращении
+
     const existing = await db.user.findUnique({ where: { email } });
     if (existing) {
       return NextResponse.json(
