@@ -27,6 +27,8 @@ System.out.println("программа жива");
           type: "code",
           prompt: "В блоке try раздели 10 на 0, поймай ArithmeticException и выведи `Ошибка деления`. Программа не должна упасть.",
           xpReward: 15,
+          explanation:
+            "Деление целого числа на ноль в Java не даёт «бесконечность» — оно выбрасывает исключение `ArithmeticException`, и без обработки программа падает с красным стектрейсом.\n\nОберни опасное действие в `try { ... }`, а рядом напиши `catch (ArithmeticException e) { ... }`. Внутри catch просто напечатай нужный текст — туда управление попадёт вместо падения.\n\nПроверь себя: после запуска программа должна напечатать `Ошибка деления` и спокойно завершиться, а не выдать ошибку.",
           starterCode: `public class Main {
     public static void main(String[] args) {
         // try { ... } catch (ArithmeticException e) { ... }
@@ -43,6 +45,8 @@ System.out.println("программа жива");
           type: "code",
           prompt: "Попробуй превратить строку \"abc\" в число через `Integer.parseInt`, поймай NumberFormatException и выведи `не число`.",
           xpReward: 15,
+          explanation:
+            "`Integer.parseInt(\"123\")` превращает текст в число, но строка `\"abc\"` числом не является — метод выбросит `NumberFormatException`.\n\nЭто второй типовой вид исключения, и ловится он точно так же: `try { Integer.parseInt(s); } catch (NumberFormatException e) { ... }`. В catch печатай `не число`.\n\nТак делают в реальных программах, когда пользователь вводит что угодно: парсишь в try, а в catch решаешь, что показать вместо падения.",
           starterCode: `public class Main {
     public static void main(String[] args) {
         String s = "abc";
@@ -92,6 +96,8 @@ try {
           type: "code",
           prompt: "Напиши try/finally: в try выведи `работаю`, в finally выведи `завершаю`.",
           xpReward: 15,
+          explanation:
+            "`finally` — это блок «уборки», который выполняется **всегда**: и когда код в `try` прошёл успешно, и когда внутри случилось исключение.\n\nНапиши `try { ... }` с печатью `работаю` и сразу за ним `finally { ... }` с печатью `завершаю`. Блок `catch` здесь не нужен — `try` в паре с `finally` допустим и без него.\n\nОжидаемый вывод — две строки по порядку: сначала `работаю`, потом `завершаю`.",
           starterCode: `public class Main {
     public static void main(String[] args) {
         // try / finally без catch
@@ -108,6 +114,8 @@ try {
           type: "code",
           prompt: "Прочитай строку. Если это целое число — выведи его квадрат; иначе выведи `не число`. Используй try/catch с Integer.parseInt.",
           xpReward: 15,
+          explanation:
+            "Задача на «попробуй и разберись»: заранее неизвестно, введёт пользователь число или текст.\n\nВнутри `try` преврати строку в число (`Integer.parseInt(line)`) и сразу напечатай его квадрат. Если строка не число — управление уйдёт в `catch (NumberFormatException e)`, и там ты печатаешь `не число`.\n\nОбрати внимание на третий тест-кейс: на входе `abc` программа должна не упасть, а вывести текст. Проверь оба случая кнопкой «Запустить», подставляя в консоль разные значения.",
           starterCode: `import java.util.Scanner;
 
 public class Main {

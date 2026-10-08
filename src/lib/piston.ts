@@ -9,11 +9,13 @@ import {
   localJdkAvailable,
   normalizeOutput,
   runLocalJava,
+  runLocalOnce,
+  type ExecuteOnceResult,
   type ExecuteResult,
   type TestResult,
 } from "@/lib/local-java";
 
-export type { ExecuteResult, TestResult };
+export type { ExecuteOnceResult, ExecuteResult, TestResult };
 export { normalizeOutput };
 
 const API_URL = process.env.PISTON_API_URL ?? "http://localhost:2000";
@@ -124,8 +126,54 @@ export async function executeTests(code: string, testCases: TestCase[]): Promise
   return executeWithPiston(code, testCases);
 }
 
-const COMPILE_HINTS: Array<[RegExp, string]> = [
-  [/';' expected|<identifier> expected/i, "Проверь точку с запятой ; в конце инструкции."],
+/** Ручной прогон кода с произвольным stdin (без сверки с тест-кейсами). */
+export async function executeOnce(code: string, stdin: string): Promise<ExecuteOnceResult> {
+  const backend = (process.env.RUNNER_BACKEND ?? "auto").toLowerCase();
+
+  if (backend !== "piston" && localJdkAvailable()) {
+    const local = await runLocalOnce(code, stdin, RUN_TIMEOUT_MS);
+    if (local.kind !== "runner_unavailable") {
+      if (local.kind === "compile_error" && local.compileError) {
+        local.compileError = friendlyCompileError(local.compileError);
+      }
+      return local;
+    }
+    console.warn("[runner] local JDK failed, falling back to piston:", local.message);
+  }
+  if (backend === "local") {
+    return runLocalOnce(code, stdin, RUN_TIMEOUT_MS);
+  }
+
+  // Piston
+  try {
+    const response = await callPiston(API_URL, code, stdin);
+    const compile = response.compile;
+    if (compile && compile.code !== 0) {
+      return {
+        kind: "compile_error",
+        compileError: friendlyCompileError(compile.stderr || compile.output || "Ошибка компиляции"),
+      };
+    }
+    const run = response.run;
+    if (!run) return { kind: "runner_unavailable", message: "Piston вернул пустой ответ." };
+    return {
+      kind: "ok",
+      stdout: run.stdout ?? "",
+      stderr: run.stderr ?? "",
+      exitCode: run.code,
+      timedOut: run.signal === "SIGKILL",
+    };
+  } catch (err) {
+    console.error("[piston] unavailable:", err);
+    return {
+      kind: "runner_unavailable",
+      message:
+        "Песочница недоступна: нет ни локального JDK (javac), ни Piston в Docker. Установи Eclipse Temurin 21 или запусти `docker compose up -d`.",
+    };
+  }
+}
+
+const COMPILE_HINTS: Array<[RegExp, string]> = [  [/';' expected|<identifier> expected/i, "Проверь точку с запятой ; в конце инструкции."],
   [/cannot find symbol/i, "Java не знает такое имя. Проверь опечатки в названиях переменных и методов."],
   [/incompatible types/i, "Типы не совпадают: нельзя, например, положить дробное число в int без преобразования."],
   [/class .* is public, should be declared/i, "Имя файла должно совпадать с именем public-класса — используй Main."],

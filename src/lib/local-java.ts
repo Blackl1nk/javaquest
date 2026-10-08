@@ -29,6 +29,18 @@ export interface ExecuteResult {
   message?: string;
 }
 
+/** Результат ручного запуска (без проверки тестами): сырой вывод программы. */
+export interface ExecuteOnceResult {
+  kind: "ok" | "compile_error" | "runner_unavailable";
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  timedOut?: boolean;
+  compileError?: string;
+  runtimeMs?: number;
+  message?: string;
+}
+
 let jdkCache: boolean | null = null;
 
 /** Есть ли на машине javac/java (проверяем один раз за процесс). */
@@ -133,6 +145,27 @@ function execLimited(
   });
 }
 
+function javacArgs(file: string): string[] {
+  return [
+    "-encoding", "UTF-8",
+    "-J-Duser.language=en",
+    "-J-Dstdout.encoding=UTF-8",
+    "-J-Dstderr.encoding=UTF-8",
+    file,
+  ];
+}
+
+function javaArgs(dir: string): string[] {
+  return [
+    "-cp", dir,
+    "-Dfile.encoding=UTF-8",
+    "-Dstdout.encoding=UTF-8",
+    "-Dstderr.encoding=UTF-8",
+    "-Dstdin.encoding=UTF-8",
+    "Main",
+  ];
+}
+
 /** Компилирует один раз и прогоняет все тест-кейсы локальным JDK. */
 export async function runLocalJava(
   code: string,
@@ -154,17 +187,9 @@ export async function runLocalJava(
     await writeFile(path.join(dir, "Main.java"), code, "utf8");
 
     const startedAt = Date.now();
-    const comp = await execLimited(
-      "javac",
-      [
-        "-encoding", "UTF-8",
-        "-J-Duser.language=en",
-        "-J-Dstdout.encoding=UTF-8",
-        "-J-Dstderr.encoding=UTF-8",
-        path.join(dir, "Main.java"),
-      ],
-      { timeoutMs: COMPILE_TIMEOUT_MS }
-    );
+    const comp = await execLimited("javac", javacArgs(path.join(dir, "Main.java")), {
+      timeoutMs: COMPILE_TIMEOUT_MS,
+    });
     if (comp.exitCode !== 0 || comp.timedOut) {
       const raw = comp.stderr.trim() || "Ошибка компиляции (компилятор не вернул деталей).";
       return {
@@ -177,18 +202,10 @@ export async function runLocalJava(
     const tests: TestResult[] = [];
     for (const tc of testCases) {
       const stdin = tc.stdin ?? "";
-      const run = await execLimited(
-        "java",
-        [
-          "-cp", dir,
-          "-Dfile.encoding=UTF-8",
-          "-Dstdout.encoding=UTF-8",
-          "-Dstderr.encoding=UTF-8",
-          "-Dstdin.encoding=UTF-8",
-          "Main",
-        ],
-        { timeoutMs: runTimeoutMs, input: stdin }
-      );
+      const run = await execLimited("java", javaArgs(dir), {
+        timeoutMs: runTimeoutMs,
+        input: stdin,
+      });
 
       const actual = run.stdout;
       const stderr = run.timedOut
@@ -202,6 +219,63 @@ export async function runLocalJava(
     return { ok, kind: ok ? "passed" : "failed", tests, runtimeMs: Date.now() - startedAt };
   } catch (e) {
     return { ok: false, kind: "runner_unavailable", message: `Локальный запуск не удался: ${(e as Error).message}` };
+  } finally {
+    if (dir) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {
+        /* файлы могли быть залочены убитым процессом */
+      });
+    }
+  }
+}
+
+/**
+ * Ручной прогон: компилирует код и запускает программу с переданным stdin,
+ * возвращая сырой stdout/stderr. Ничего не сравнивает с ожидаемым —
+ * это «поиграться и посмотреть вывод», проверка тестами живёт отдельно.
+ */
+export async function runLocalOnce(
+  code: string,
+  stdin: string,
+  runTimeoutMs: number
+): Promise<ExecuteOnceResult> {
+  if (!localJdkAvailable()) {
+    return {
+      kind: "runner_unavailable",
+      message:
+        "На компьютере не найден JDK (javac). Установи Eclipse Temurin 21 или запусти Docker: docker compose up -d.",
+    };
+  }
+
+  let dir: string | undefined;
+  try {
+    dir = await mkdtemp(path.join(tmpdir(), "jq-play-"));
+    await writeFile(path.join(dir, "Main.java"), code, "utf8");
+
+    const startedAt = Date.now();
+    const comp = await execLimited("javac", javacArgs(path.join(dir, "Main.java")), {
+      timeoutMs: COMPILE_TIMEOUT_MS,
+    });
+    if (comp.exitCode !== 0 || comp.timedOut) {
+      const raw = comp.stderr.trim() || "Ошибка компиляции (компилятор не вернул деталей).";
+      return {
+        kind: "compile_error",
+        compileError: dir ? raw.split(dir + path.sep).join("") : raw,
+      };
+    }
+
+    const run = await execLimited("java", javaArgs(dir), { timeoutMs: runTimeoutMs, input: stdin });
+    return {
+      kind: "ok",
+      stdout: run.stdout,
+      stderr: run.timedOut
+        ? `⏱ Превышен лимит времени (${Math.round(runTimeoutMs / 1000)} с) — вероятно, бесконечный цикл. Программа остановлена.`
+        : run.stderr,
+      exitCode: run.exitCode,
+      timedOut: run.timedOut,
+      runtimeMs: Date.now() - startedAt,
+    };
+  } catch (e) {
+    return { kind: "runner_unavailable", message: `Локальный запуск не удался: ${(e as Error).message}` };
   } finally {
     if (dir) {
       await rm(dir, { recursive: true, force: true }).catch(() => {

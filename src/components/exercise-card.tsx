@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  BookOpen,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -11,19 +12,31 @@ import {
   Loader2,
   Play,
   Send,
+  ShieldCheck,
   XCircle,
 } from "lucide-react";
 import type { Exercise } from "@/content/types";
 import type { TestResult } from "@/lib/piston";
 import { CodeEditor } from "@/components/code-editor";
+import { ClearConsoleButton, ConsolePanel, type ConsoleRun } from "@/components/console";
 import { Markdown } from "@/components/markdown";
 import { cn } from "@/lib/utils";
 
 type RunResponse = {
   ok: boolean;
-  kind: "passed" | "failed" | "compile_error" | "runner_unavailable";
+  kind: "passed" | "failed" | "compile_error" | "runner_unavailable" | "rate_limited";
   compileError?: string;
   tests?: Array<TestResult>;
+  runtimeMs?: number;
+  message?: string;
+};
+
+type ExecuteResponse = {
+  kind: "ok" | "compile_error" | "runner_unavailable" | "rate_limited";
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  compileError?: string;
   runtimeMs?: number;
   message?: string;
 };
@@ -50,19 +63,58 @@ export function ExerciseCard({
 }) {
   const router = useRouter();
   const [code, setCode] = useState(exercise.type === "code" ? exercise.starterCode : "");
+  const [stdin, setStdin] = useState(
+    exercise.type === "code" ? (exercise.testCases[0]?.stdin ?? "") : ""
+  );
   const [selected, setSelected] = useState<number | null>(null);
-  const [busy, setBusy] = useState<"" | "run" | "submit">("");
+  const [busy, setBusy] = useState<"" | "run" | "check" | "submit">("");
+  const [consoleRun, setConsoleRun] = useState<ConsoleRun | null>(null);
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
   const [wrong, setWrong] = useState(false);
   const [solvedXp, setSolvedXp] = useState<number | null>(null);
   const [revealedHints, setRevealedHints] = useState(0);
+  const [explainOpen, setExplainOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const hints = exercise.hints ?? [];
 
+  /** Ручной запуск: смотрим вывод программы, ничего не проверяем. */
   async function runCode() {
     if (exercise.type !== "code") return;
     setBusy("run");
+    setError(null);
+    try {
+      const res = await fetch("/api/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exerciseId: exercise.id, code, stdin }),
+      });
+      const data = (await res.json()) as ExecuteResponse;
+
+      if (data.kind === "runner_unavailable" || data.kind === "rate_limited") {
+        setError(data.message ?? "Не удалось запустить код.");
+        setConsoleRun(null);
+        return;
+      }
+      setConsoleRun({
+        stdin,
+        stdout: data.stdout ?? "",
+        stderr: data.stderr ?? "",
+        compileError: data.compileError,
+        exitCode: data.exitCode,
+        runtimeMs: data.runtimeMs,
+      });
+    } catch {
+      setError("Не удалось связаться с сервером. Попробуй ещё раз.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  /** Проверка: прогон по тест-кейсам, при успехе — начисление XP. */
+  async function checkCode() {
+    if (exercise.type !== "code") return;
+    setBusy("check");
     setError(null);
     setRunResult(null);
     try {
@@ -73,7 +125,7 @@ export function ExerciseCard({
       });
       const data = (await res.json()) as RunResponse;
       if (!res.ok && !data.kind) {
-        setError(`Ошибка запуска (${res.status})`);
+        setError(`Ошибка проверки (${res.status})`);
         return;
       }
       setRunResult(data);
@@ -102,7 +154,6 @@ export function ExerciseCard({
         setSolvedXp(data.xpGranted ?? 0);
         onSolved(exercise.id, data.xpGranted ?? 0);
         if (data.newAchievements?.length) {
-          // короткая пауза, чтобы тост XP успел показаться
           setTimeout(() => router.refresh(), 600);
         } else {
           router.refresh();
@@ -130,6 +181,8 @@ export function ExerciseCard({
     void submitCode("");
   }
 
+  const passed = runResult?.kind === "passed";
+
   return (
     <section
       className={cn(
@@ -154,23 +207,85 @@ export function ExerciseCard({
         </span>
       </header>
 
+      {/* Подробное объяснение задания */}
+      {exercise.explanation && (
+        <div className="mb-3 overflow-hidden rounded-xl border border-aqua/25 bg-aqua/5">
+          <button
+            type="button"
+            onClick={() => setExplainOpen((v) => !v)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-aqua"
+          >
+            <BookOpen className="size-3.5" />
+            Как решать эту задачу
+            <span className="ml-auto text-[10px] font-normal text-muted">
+              {explainOpen ? "свернуть" : "показать"}
+            </span>
+          </button>
+          {explainOpen && (
+            <div className="border-t border-aqua/20 px-3 py-2.5">
+              <Markdown className="text-[13px]">{exercise.explanation}</Markdown>
+            </div>
+          )}
+        </div>
+      )}
+
       {exercise.type === "code" && (
         <div className="space-y-3">
           <CodeEditor value={code} onChange={setCode} />
+
+          <ConsolePanel
+            stdin={stdin}
+            onStdinChange={setStdin}
+            run={consoleRun}
+            running={busy === "run"}
+            placeholderStdin={exercise.testCases[0]?.stdin ?? "данные для Scanner…"}
+          />
+
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={runCode}
               disabled={busy !== "" || done}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent-strong px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              title="Запустить только у себя в консоли — без проверки и без XP"
+              className="inline-flex items-center gap-2 rounded-lg border border-accent-strong/60 bg-accent-strong/15 px-4 py-2 text-sm font-semibold text-accent transition hover:bg-accent-strong/25 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy === "run" ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
               {busy === "run" ? "Запускаю…" : "Запустить"}
             </button>
+
+            <button
+              onClick={checkCode}
+              disabled={busy !== "" || done}
+              title="Проверить решение тестами и получить XP"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent-strong px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy === "check" || busy === "submit" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="size-4" />
+              )}
+              {busy === "check" || busy === "submit" ? "Проверяю…" : "Проверить"}
+            </button>
+
+            <ClearConsoleButton
+              onClick={() => {
+                setConsoleRun(null);
+                setRunResult(null);
+              }}
+              disabled={!consoleRun && !runResult}
+            />
+
             {done && <span className="text-sm text-success">Задание решено ✓</span>}
             {solvedXp !== null && !done && (
               <span className="animate-pulse text-sm font-semibold text-success">+{solvedXp} XP!</span>
             )}
           </div>
+
+          <p className="text-[11px] leading-relaxed text-muted">
+            <strong className="font-semibold text-foreground/80">Запустить</strong> — просто исполняет код с
+            вводом из консоли, чтобы посмотреть, что получилось.{" "}
+            <strong className="font-semibold text-foreground/80">Проверить</strong> — прогоняет программу по
+            всем тестам задания и, если всё верно, начисляет XP.
+          </p>
 
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
@@ -200,6 +315,21 @@ export function ExerciseCard({
 
           {runResult?.tests && (
             <div className="overflow-hidden rounded-lg border border-border-soft">
+              <div className="flex items-center gap-2 border-b border-border-soft bg-surface-2/60 px-3 py-2 text-xs font-semibold">
+                {passed ? (
+                  <>
+                    <CheckCircle2 className="size-3.5 text-success" />
+                    <span className="text-success">Все тесты пройдены</span>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="size-3.5 text-danger" />
+                    <span className="text-danger">
+                      Пройдено {runResult.tests.filter((t) => t.pass).length} из {runResult.tests.length}
+                    </span>
+                  </>
+                )}
+              </div>
               <table className="w-full text-left text-xs">
                 <thead className="bg-surface-2 text-muted">
                   <tr>
@@ -234,7 +364,7 @@ export function ExerciseCard({
 
           {runResult?.kind === "failed" && (
             <p className="text-sm text-muted">
-              Почти! Сравни «Ожидалось» и «Получилось» — разница подскажет, что поправить.
+              Пока не всё. Сравни «Ожидалось» и «Получилось» — разница подскажет, что поправить.
             </p>
           )}
         </div>

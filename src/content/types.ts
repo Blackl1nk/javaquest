@@ -15,6 +15,12 @@ export interface ExerciseBase {
   prompt: string; // markdown
   xpReward: number;
   hints?: string[];
+  /**
+   * Подробный разбор: что нужно сделать и как это работает.
+   * У кодовых заданий — сворачиваемый блок «Как решать эту задачу»,
+   * у викторин — пояснение после ответа.
+   */
+  explanation?: string;
 }
 
 export interface CodeExercise extends ExerciseBase {
@@ -27,7 +33,6 @@ export interface MultipleChoiceExercise extends ExerciseBase {
   type: "multiple_choice";
   options: string[];
   answerIndex: number;
-  explanation?: string;
 }
 
 export type Exercise = CodeExercise | MultipleChoiceExercise;

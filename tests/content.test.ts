@@ -43,6 +43,18 @@ describe("целостность контента курса", () => {
     }
   });
 
+  it("у каждого задания есть объяснение (explanation)", () => {
+    const missing: string[] = [];
+    for (const m of published) {
+      for (const l of m.lessons) {
+        for (const e of l.exercises) {
+          if (!e.explanation || e.explanation.trim().length < 40) missing.push(e.id);
+        }
+      }
+    }
+    expect(missing, `без объяснения: ${missing.join(", ")}`).toEqual([]);
+  });
+
   it("findExercise находит каждое задание в своём уроке", () => {
     for (const m of published) {
       for (const l of m.lessons) {
