@@ -20,15 +20,33 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.data.email.toLowerCase().trim();
-  const existing = await db.user.findUnique({ where: { email } });
-  if (existing) {
-    return NextResponse.json({ error: "email_taken", message: "Этот email уже зарегистрирован" }, { status: 409 });
+
+  try {
+    const existing = await db.user.findUnique({ where: { email } });
+    if (existing) {
+      return NextResponse.json(
+        { error: "email_taken", message: "Этот email уже зарегистрирован — попробуй войти" },
+        { status: 409 }
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+    const user = await db.user.create({
+      data: { name: parsed.data.name, email, passwordHash },
+    });
+
+    return NextResponse.json({ ok: true, userId: user.id }, { status: 201 });
+  } catch (e) {
+    // Сюда попадаем, если БД недоступна или таблицы не созданы (частая причина
+    // на свежем хостинге: не применена схема / не задан DATABASE_URL).
+    console.error("[register] database error:", e);
+    return NextResponse.json(
+      {
+        error: "server_error",
+        message:
+          "Сервер не смог сохранить аккаунт: база данных недоступна. Напиши администратору сайта (проблема на стороне сервера, не в твоих данных).",
+      },
+      { status: 503 }
+    );
   }
-
-  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-  const user = await db.user.create({
-    data: { name: parsed.data.name, email, passwordHash },
-  });
-
-  return NextResponse.json({ ok: true, userId: user.id }, { status: 201 });
 }

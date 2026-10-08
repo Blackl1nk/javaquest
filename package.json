@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "build:pg": "prisma generate --schema prisma/schema.postgres.prisma && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",

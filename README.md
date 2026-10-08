@@ -129,9 +129,13 @@ tests/                      # unit-тесты игровой логики и п�
    | `PISTON_API_URL` | URL твоего Piston-сервиса (шаг 5) |
 
 5. Java-песочница: на Railway в контейнере нет `javac`, поэтому подключи [Piston](https://github.com/engineer-man/piston) — через шаблон сообщества Railway («Piston») или VPS с Docker — и укажи его URL в `PISTON_API_URL`. Пока песочницы нет, сайт работает: викторины полностью доступны, кодовые задания показывают дружелюбную заглушку.
-6. Deploy: Railway сам прогонит `prisma db push` против Postgres при старте (прописано в `startCommand` из `railway.json`) и поднимет сайт на выданном домене.
+6. Deploy: Railway прогонит `prisma db push` против Postgres при старте (прописано в `startCommand` из `railway.json`) и поднимет сайт на выданном домене.
 
-> Локальная разработка остаётся на SQLite — Postgres-схема нужна только продакшену. Модели дублируются в `schema.prisma` и `schema.postgres.prisma`: меняя модели, обновляй оба файла.
+**Проверка после деплоя:** открой `https://твой-домен/api/health` — увидишь `{"healthy":true,...}` и число пользователей. Если `healthy:false`, там же будет причина (например, `database: "error"` с текстом ошибки).
+
+> ⚠️ **Важно про схему.** Продакшен собирается с Postgres-схемой (`buildCommand` в `railway.json` явно указывает `--schema prisma/schema.postgres.prisma`). Не меняй его на обычный `npm run build`: тот генерирует Prisma-клиент под **SQLite**, и на Railway все запросы к базе начнут падать — регистрация и вход перестанут работать. Локально SQLite-схема остаётся рабочей (`npm run build`, `npm run dev`).
+
+> Локальная разработка остаётся на SQLite. Модели дублируются в `schema.prisma` и `schema.postgres.prisma`: меняя модели, обновляй оба файла.
 
 ## Известные ограничения (v1)
 

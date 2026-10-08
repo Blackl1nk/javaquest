@@ -25,9 +25,23 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, email, password }),
         });
+
+        // Сервер может ответить не-JSON (например, страница ошибки хостинга).
+        const raw = await res.text();
+        let data: { message?: string; error?: string } = {};
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          data = {};
+        }
+
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setError(data.message ?? "Не удалось зарегистрироваться");
+          setError(
+            data.message ??
+              (res.status >= 500
+                ? `Ошибка сервера (${res.status}). Похоже, база данных ещё не подключена — сообщи администратору сайта.`
+                : `Не удалось зарегистрироваться (код ${res.status})`)
+          );
           return;
         }
       }
