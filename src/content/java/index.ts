@@ -1,57 +1,14 @@
 import type { Course } from "@/content/types";
-
-const SKELETON_MODULES = [
-  {
-    id: "conditions",
-    title: "Условия: if, else, switch",
-    description: "Научим программу принимать решения и вести себя по-разному в зависимости от данных.",
-  },
-  {
-    id: "loops",
-    title: "Циклы: for и while",
-    description: "Повторяем действия сотни раз тремя строками кода.",
-  },
-  {
-    id: "arrays",
-    title: "Массивы",
-    description: "Храним и обрабатываем наборы значений: списки чисел, таблицы, результаты игр.",
-  },
-  {
-    id: "methods",
-    title: "Методы",
-    description: "Разбиваем программу на переиспользуемые блоки с параметрами и результатом.",
-  },
-  {
-    id: "strings-api",
-    title: "Работа со строками",
-    description: "length, substring, split и другие инструменты для текста.",
-  },
-  {
-    id: "oop-basics",
-    title: "ООП: классы и объекты",
-    description: "Создаём собственные типы данных — «чертежи» объектов с полями и поведением.",
-  },
-  {
-    id: "oop-advanced",
-    title: "ООП: наследование и интерфейсы",
-    description: "Строим иерархии классов и договоры поведения.",
-  },
-  {
-    id: "collections",
-    title: "Коллекции: ArrayList и HashMap",
-    description: "Гибкие списки и словари для реальных задач.",
-  },
-  {
-    id: "exceptions",
-    title: "Исключения",
-    description: "Обрабатываем ошибки красиво: try/catch и собственные исключения.",
-  },
-  {
-    id: "projects",
-    title: "Мини-проекты",
-    description: "Калькулятор, игра «Угадай число» и консольный todo-список.",
-  },
-] as const;
+import { conditionsModule } from "./modules/conditions";
+import { loopsModule } from "./modules/loops";
+import { arraysModule } from "./modules/arrays";
+import { methodsModule } from "./modules/methods";
+import { stringsModule } from "./modules/strings-api";
+import { oopBasicsModule } from "./modules/oop-basics";
+import { oopAdvancedModule } from "./modules/oop-advanced";
+import { collectionsModule } from "./modules/collections";
+import { exceptionsModule } from "./modules/exceptions";
+import { projectsModule } from "./modules/projects";
 
 export const javaCourse: Course = {
   slug: "java",
@@ -538,13 +495,16 @@ public class Main {
         },
       ],
     },
-    // ---------- Скелеты будущих модулей ----------
-    ...SKELETON_MODULES.map((m) => ({
-      id: m.id,
-      title: m.title,
-      description: m.description,
-      published: false,
-      lessons: [],
-    })),
+    // ---------- Модули 4–13 ----------
+    conditionsModule,
+    loopsModule,
+    arraysModule,
+    methodsModule,
+    stringsModule,
+    oopBasicsModule,
+    oopAdvancedModule,
+    collectionsModule,
+    exceptionsModule,
+    projectsModule,
   ],
 };

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getPublishedModules, course } from "@/lib/course";
+import { plural } from "@/components/stats";
 
 export default async function LandingPage() {
   const session = await auth();
@@ -120,11 +121,11 @@ export default async function LandingPage() {
 
         <div className="mt-8 rounded-2xl border border-accent/30 bg-accent/10 p-6 text-center">
           <h3 className="text-lg font-bold text-white">
-            Первые три модуля уже открыты — начни сегодня
+            Весь путь открыт — с нуля до собственных проектов
           </h3>
           <p className="mt-1 text-sm text-muted">
-            {modules.length} модуля · {[...modules].flatMap((m) => m.lessons).length} уроков ·
-            живой запуск Java-кода
+            {modules.length} {plural(modules.length, "модуль", "модуля", "модулей")} ·{" "}
+            {[...modules].flatMap((m) => m.lessons).length} уроков · живой запуск Java-кода
           </p>
           <Link
             href={session?.user ? "/learn" : "/register"}

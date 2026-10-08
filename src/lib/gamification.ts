@@ -179,6 +179,18 @@ export const ACHIEVEMENTS: AchievementDef[] = [
       return total > 0 && s.completedExerciseIds.length >= Math.ceil(total / 2);
     },
   },
+  {
+    code: "course_complete",
+    title: "Весь путь пройден",
+    description: "Решены все задания курса Java",
+    icon: "👑",
+    check: (s) => {
+      const total = course.modules
+        .filter((m) => m.published)
+        .reduce((n, m) => n + m.lessons.reduce((k, l) => k + l.exercises.length, 0), 0);
+      return total > 0 && s.completedExerciseIds.length >= total;
+    },
+  },
 ];
 
 export function newlyUnlocked(stats: UserStats, alreadyOwned: Set<string>): string[] {
