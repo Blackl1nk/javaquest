@@ -19,17 +19,25 @@ function clean(value) {
   return (value ?? "").trim().replace(/^["']|["']$/g, "").trim();
 }
 
-/** DATABASE_URL из окружения, иначе из файла .env (в CI-сборке Vercel файла нет). */
-function resolveDatabaseUrl() {
-  const fromEnv = clean(process.env.DATABASE_URL);
-  if (fromEnv) return fromEnv;
+/**
+ * DATABASE_URL в порядке приоритета Next.js: сначала окружение, затем .env.local,
+ * затем .env. Иначе возможен рассинхрон: сборка сгенерирует клиент под одну базу,
+ * а приложение в рантайме подключится к другой.
+ */
+function readFromEnvFile(file) {
   try {
-    const envFile = readFileSync(".env", "utf8");
+    const envFile = readFileSync(file, "utf8");
     const match = envFile.match(/^\s*DATABASE_URL\s*=\s*(.+)$/m);
     return clean(match?.[1]);
   } catch {
     return "";
   }
+}
+
+function resolveDatabaseUrl() {
+  return (
+    clean(process.env.DATABASE_URL) || readFromEnvFile(".env.local") || readFromEnvFile(".env")
+  );
 }
 
 const url = resolveDatabaseUrl();
