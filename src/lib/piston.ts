@@ -1,8 +1,10 @@
 // Диспетчер песочницы: прогоняет Java-код по тест-кейсам (stdin → сравнение stdout).
 // Бэкенды:
-//   local  — настоящий JDK с машины (javac/java), без Docker (личный сайт/разработка)
-//   piston — серверная песочница Piston в Docker (для публичного продакшена)
-// Выбор: RUNNER_BACKEND=auto (по умолчанию) | local | piston.
+//   local  — настоящий JDK с машины (javac/java), без Docker (локальная разработка)
+//   piston — серверная песочница Piston в Docker (свой сервер/VPS)
+//   judge0 — облачный Judge0 CE (для хостингов без JDK, например Vercel)
+// Выбор: RUNNER_BACKEND=auto (по умолчанию) | local | piston | judge0.
+// В режиме auto: локальный JDK, если он есть, иначе Judge0.
 
 import type { TestCase } from "@/content/types";
 import {
@@ -14,6 +16,7 @@ import {
   type ExecuteResult,
   type TestResult,
 } from "@/lib/local-java";
+import { executeOnceJudge0, executeTestsJudge0 } from "@/lib/judge0";
 
 export type { ExecuteOnceResult, ExecuteResult, TestResult };
 export { normalizeOutput };
@@ -111,8 +114,13 @@ export async function executeTests(code: string, testCases: TestCase[]): Promise
   if (backend === "piston") {
     return executeWithPiston(code, testCases);
   }
+  if (backend === "judge0") {
+    const r = await executeTestsJudge0(code, testCases);
+    if (r.kind === "compile_error" && r.compileError) r.compileError = friendlyCompileError(r.compileError);
+    return r;
+  }
 
-  // auto: предпочитаем локальный JDK, иначе Piston
+  // auto: свой JDK, если он есть, иначе облачный Judge0
   if (localJdkAvailable()) {
     const local = await runLocalJava(code, testCases, RUN_TIMEOUT_MS);
     if (local.kind !== "runner_unavailable") {
@@ -121,14 +129,30 @@ export async function executeTests(code: string, testCases: TestCase[]): Promise
       }
       return local;
     }
-    console.warn("[runner] local JDK failed, falling back to piston:", local.message);
+    console.warn("[runner] локальный JDK не сработал, перехожу на Judge0:", local.message);
   }
-  return executeWithPiston(code, testCases);
+  const remote = await executeTestsJudge0(code, testCases);
+  if (remote.kind === "compile_error" && remote.compileError) {
+    remote.compileError = friendlyCompileError(remote.compileError);
+  }
+  return remote;
 }
 
 /** Ручной прогон кода с произвольным stdin (без сверки с тест-кейсами). */
 export async function executeOnce(code: string, stdin: string): Promise<ExecuteOnceResult> {
   const backend = (process.env.RUNNER_BACKEND ?? "auto").toLowerCase();
+
+  if (backend === "local") {
+    const r = await runLocalOnce(code, stdin, RUN_TIMEOUT_MS);
+    if (r.kind === "compile_error" && r.compileError) r.compileError = friendlyCompileError(r.compileError);
+    return r;
+  }
+
+  if (backend === "judge0") {
+    const r = await executeOnceJudge0(code, stdin);
+    if (r.kind === "compile_error" && r.compileError) r.compileError = friendlyCompileError(r.compileError);
+    return r;
+  }
 
   if (backend !== "piston" && localJdkAvailable()) {
     const local = await runLocalOnce(code, stdin, RUN_TIMEOUT_MS);
@@ -138,10 +162,19 @@ export async function executeOnce(code: string, stdin: string): Promise<ExecuteO
       }
       return local;
     }
-    console.warn("[runner] local JDK failed, falling back to piston:", local.message);
+    console.warn("[runner] локальный JDK не сработал, перехожу на Judge0:", local.message);
+    const remote = await executeOnceJudge0(code, stdin);
+    if (remote.kind === "compile_error" && remote.compileError) {
+      remote.compileError = friendlyCompileError(remote.compileError);
+    }
+    return remote;
   }
-  if (backend === "local") {
-    return runLocalOnce(code, stdin, RUN_TIMEOUT_MS);
+  if (backend === "auto") {
+    const remote = await executeOnceJudge0(code, stdin);
+    if (remote.kind === "compile_error" && remote.compileError) {
+      remote.compileError = friendlyCompileError(remote.compileError);
+    }
+    return remote;
   }
 
   // Piston
@@ -173,7 +206,8 @@ export async function executeOnce(code: string, stdin: string): Promise<ExecuteO
   }
 }
 
-const COMPILE_HINTS: Array<[RegExp, string]> = [  [/';' expected|<identifier> expected/i, "Проверь точку с запятой ; в конце инструкции."],
+const COMPILE_HINTS: Array<[RegExp, string]> = [
+  [/';' expected|<identifier> expected/i, "Проверь точку с запятой ; в конце инструкции."],
   [/cannot find symbol/i, "Java не знает такое имя. Проверь опечатки в названиях переменных и методов."],
   [/incompatible types/i, "Типы не совпадают: нельзя, например, положить дробное число в int без преобразования."],
   [/class .* is public, should be declared/i, "Имя файла должно совпадать с именем public-класса — используй Main."],
