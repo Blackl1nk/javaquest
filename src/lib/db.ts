@@ -7,34 +7,33 @@ export const db = globalForPrisma.prisma ?? new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
 
 /**
- * Vercel (serverless) не запускает команды деплоя вроде `prisma db push`,
- * поэтому при первом обращении аккуратно создаём недостающие таблицы.
- * Выполняется один раз на инстанс и не мешает локальной разработке.
+ * Проверка готовности базы перед работой с данными.
+ *
+ * Раньше здесь предпринималась попытка создать таблицы через `npx prisma db push`
+ * прямо в serverless-функции, но это ненадёжно: Prisma CLI не попадает в бандл
+ * функции, и `npx` пытался бы скачивать пакет во время запроса пользователя.
+ * Теперь схема применяется отдельной командой (`npm run db:push`), а здесь мы
+ * только фиксируем понятную причину в логах, если таблиц ещё нет.
  */
-let schemaEnsured: Promise<void> | null = null;
+let schemaChecked: Promise<void> | null = null;
 
 export function ensureSchema(): Promise<void> {
-  if (process.env.NODE_ENV !== "production") return Promise.resolve();
-  if (!schemaEnsured) {
-    schemaEnsured = (async () => {
+  if (!schemaChecked) {
+    schemaChecked = (async () => {
       try {
-        await db.user.count(); // если таблицы есть — просто выходим
+        await db.user.count();
       } catch (e) {
         const message = (e as Error).message;
         if (/does not exist|no such table/i.test(message)) {
-          console.warn("[db] таблицы не найдены — создаю схему через prisma db push");
-          const { spawnSync } = await import("node:child_process");
-          const result = spawnSync(
-            "npx",
-            ["prisma", "db", "push", "--schema", "prisma/schema.postgres.prisma", "--skip-generate", "--accept-data-loss"],
-            { stdio: "inherit", shell: process.platform === "win32" }
+          console.error(
+            "[db] Таблицы не найдены. Примени схему к базе командой: npm run db:push " +
+              "(или npx prisma db push --schema prisma/schema.postgres.prisma) и перезапусти деплой."
           );
-          if (result.status !== 0) {
-            console.error("[db] не удалось создать схему — проверь DATABASE_URL в настройках Vercel");
-          }
+        } else {
+          console.error("[db] База недоступна:", message.slice(0, 300));
         }
       }
     })();
   }
-  return schemaEnsured;
+  return schemaChecked;
 }
