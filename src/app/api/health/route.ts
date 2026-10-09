@@ -8,10 +8,19 @@ import { db, ensureSchema } from "@/lib/db";
 export async function GET() {
   const problems: string[] = [];
 
-  const databaseUrlSet = Boolean(process.env.DATABASE_URL);
+  const rawUrl = process.env.DATABASE_URL ?? "";
+  // Кавычки и пробелы часто попадают в значение при копировании из панели хостинга.
+  const cleanedUrl = rawUrl.trim().replace(/^["']|["']$/g, "").trim();
+  const databaseUrlSet = Boolean(cleanedUrl);
   const authSecretSet = Boolean(process.env.AUTH_SECRET);
-  const isPostgresUrl = /^postgres(ql)?:\/\//.test(process.env.DATABASE_URL ?? "");
-  const isSqliteUrl = /^file:/.test(process.env.DATABASE_URL ?? "");
+  const isPostgresUrl = /^postgres(ql)?:\/\//.test(cleanedUrl);
+  const isSqliteUrl = cleanedUrl.startsWith("file:");
+  // Показываем только протокол — без логина, пароля и хоста.
+  const urlScheme = !cleanedUrl
+    ? "(пусто)"
+    : cleanedUrl.includes("://")
+      ? `${cleanedUrl.split("://")[0]}://`
+      : `${cleanedUrl.slice(0, Math.min(cleanedUrl.indexOf(":") + 1 || 12, 12))}…`;
   const isProduction = process.env.NODE_ENV === "production";
 
   if (!databaseUrlSet) problems.push("Не задан DATABASE_URL — база данных не подключена.");
@@ -19,14 +28,21 @@ export async function GET() {
     problems.push(
       "Не задан AUTH_SECRET — вход и регистрация не работают. Добавь переменную AUTH_SECRET в настройках хостинга."
     );
+  if (databaseUrlSet && !isPostgresUrl && !isSqliteUrl)
+    problems.push(
+      `DATABASE_URL выглядит некорректно (начинается с «${urlScheme}», ожидается postgresql://). ` +
+        "Проверь значение: возможно, скопированы лишние кавычки или пробелы."
+    );
   if (isProduction && isSqliteUrl)
     problems.push(
-      "DATABASE_URL указывает на SQLite (file:...) в продакшене — данные не сохранятся. Подключи PostgreSQL и укажи его URL."
+      "DATABASE_URL указывает на SQLite (file:...) в продакшене — данные не сохранятся. Подключи PostgreSQL."
     );
 
   const checks: Record<string, unknown> = {
     databaseUrlSet,
+    databaseUrlScheme: urlScheme,
     databaseKind: isPostgresUrl ? "postgresql" : isSqliteUrl ? "sqlite" : "unknown",
+    databaseUrlHasExtraChars: rawUrl !== cleanedUrl,
     authSecretSet,
     authTrustHost: process.env.AUTH_TRUST_HOST ?? null,
     runnerBackend: process.env.RUNNER_BACKEND ?? "auto",

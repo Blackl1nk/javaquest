@@ -1,9 +1,12 @@
 // Выбирает Prisma-схему по виду DATABASE_URL:
-//   postgres://… или postgresql://…  → Postgres-схема (Vercel, Railway и т.п.)
-//   file:…                           → локальная SQLite-схема
+//   file:…          → локальная SQLite-схема
+//   всё остальное   → Postgres-схема (Vercel, Railway и т.п.)
 //
-// Запускается из npm-скриптов build / db:push, чтобы не угадывать платформу вручную.
-// Использование: node scripts/with-schema.mjs <generate|dbpush> [...доп. аргументы]
+// Логика намеренно «по умолчанию Postgres»: продакшен всегда на Postgres,
+// SQLite — только локальная разработка. Так сборка не сломается, даже если
+// переменная задана с кавычками, пробелами или нестандартным префиксом.
+//
+// Использование: node scripts/with-schema.mjs <generate|dbpush>
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -11,36 +14,55 @@ import { readFileSync } from "node:fs";
 const mode = process.argv[2];
 const extraArgs = process.argv.slice(3);
 
-/**
- * Читаем DATABASE_URL из окружения, а если его нет — из файла .env.
- * Так мы точно знаем, на какую базу собираемся, и не зависим от того,
- * успел ли Prisma CLI загрузить .env (в CI-сборке Vercel файла .env нет вовсе).
- */
+/** Убирает кавычки и пробелы, которые часто попадают при копировании значения. */
+function clean(value) {
+  return (value ?? "").trim().replace(/^["']|["']$/g, "").trim();
+}
+
+/** DATABASE_URL из окружения, иначе из файла .env (в CI-сборке Vercel файла нет). */
 function resolveDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const fromEnv = clean(process.env.DATABASE_URL);
+  if (fromEnv) return fromEnv;
   try {
     const envFile = readFileSync(".env", "utf8");
-    const match = envFile.match(/^\s*DATABASE_URL\s*=\s*"?([^"\r\n]+)"?/m);
-    return match?.[1] ?? "";
+    const match = envFile.match(/^\s*DATABASE_URL\s*=\s*(.+)$/m);
+    return clean(match?.[1]);
   } catch {
     return "";
   }
 }
 
 const url = resolveDatabaseUrl();
-const isPostgres = /^postgres(ql)?:\/\//.test(url);
-const schema = isPostgres ? "prisma/schema.postgres.prisma" : "prisma/schema.prisma";
+const isSqlite = url.startsWith("file:");
+const schema = isSqlite ? "prisma/schema.prisma" : "prisma/schema.postgres.prisma";
+
+// Диагностика без утечки секретов: показываем только протокол.
+function describeScheme(value) {
+  if (!value) return "(пусто)";
+  if (value.includes("://")) return `${value.split("://")[0]}://`;
+  const colon = value.indexOf(":");
+  return colon > 0 ? `${value.slice(0, colon + 1)}…` : `${value.slice(0, 12)}…`;
+}
+
+const scheme = describeScheme(url);
+console.log(`[prisma] DATABASE_URL начинается с: ${scheme}`);
+console.log(`[prisma] схема: ${schema} (${isSqlite ? "SQLite" : "PostgreSQL"})`);
 
 if (!url) {
   console.warn(
-    "[prisma] DATABASE_URL не задан — использую локальную SQLite-схему. " +
-      "На хостинге обязательно добавь DATABASE_URL (PostgreSQL)."
+    "[prisma] DATABASE_URL не задан. На хостинге обязательно добавь переменную " +
+      "DATABASE_URL (PostgreSQL) и сделай Redeploy."
+  );
+} else if (!isSqlite && !/^postgres(ql)?:\/\//.test(url)) {
+  console.warn(
+    "[prisma] Похоже, DATABASE_URL задан неверно: ожидается postgresql://… " +
+      "Проверь значение переменной в настройках хостинга (без кавычек и пробелов)."
   );
 }
 
 const commands = {
   generate: ["prisma", "generate", `--schema=${schema}`],
-  dbpush: ["prisma", "db", "push", `--schema=${schema}`, "--skip-generate"],
+  dbpush: ["prisma", "db", "push", `--schema=${schema}`, "--skip-generate", "--accept-data-loss"],
 };
 
 const args = commands[mode];
@@ -48,8 +70,6 @@ if (!args) {
   console.error(`[prisma] неизвестный режим: ${mode} (ожидается generate или dbpush)`);
   process.exit(1);
 }
-
-console.log(`[prisma] схема: ${schema} (${isPostgres ? "PostgreSQL" : "SQLite"})`);
 
 const result = spawnSync("npx", [...args, ...extraArgs], {
   stdio: "inherit",
